@@ -1,0 +1,38 @@
+{
+  "name": "pi-fast-mode",
+  "version": "0.1.0",
+  "description": "Request priority processing for supported OpenAI models in Pi with /fast",
+  "type": "module",
+  "license": "MIT",
+  "author": "Vangalle",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Vangalle/pi-fast-mode.git"
+  },
+  "homepage": "https://github.com/Vangalle/pi-fast-mode#readme",
+  "bugs": {
+    "url": "https://github.com/Vangalle/pi-fast-mode/issues"
+  },
+  "keywords": ["pi-package", "pi-extension", "openai", "fast-mode", "service-tier"],
+  "engines": {
+    "node": ">=22.19.0"
+  },
+  "files": ["src", "README.md", "LICENSE"],
+  "scripts": {
+    "test": "node --experimental-strip-types --test test/*.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "check": "npm run typecheck && npm test"
+  },
+  "pi": {
+    "extensions": ["./src/pi-fast-mode.ts"]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-coding-agent": "1.1.0",
+    "@types/node": "22.19.19",
+    "typescript": "5.9.3"
+  }
+}
