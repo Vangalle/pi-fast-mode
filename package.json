@@ -1,7 +1,7 @@
 {
   "name": "pi-fast-mode",
-  "version": "0.1.0",
-  "description": "Request priority processing for supported OpenAI models in Pi with /fast",
+  "version": "0.2.0",
+  "description": "Request priority processing for openai/openai-codex gpt-* models in Pi with /fast",
   "type": "module",
   "license": "MIT",
   "author": "Vangalle",

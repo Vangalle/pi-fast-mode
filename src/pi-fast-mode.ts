@@ -1,11 +1,11 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const STATE_TYPE = "fast-mode";
-const MODELS = new Set(["gpt-6.1-sol", "gpt-6-sol"]);
 const PROVIDERS = new Set(["openai", "openai-codex"]);
 
-function supportsFast(model: ExtensionContext["model"]): boolean {
-  return Boolean(model && PROVIDERS.has(model.provider) && MODELS.has(model.id));
+// Eligibility to request a tier is not a guarantee that the provider grants it.
+function canRequestFast(model: ExtensionContext["model"]): boolean {
+  return Boolean(model && PROVIDERS.has(model.provider) && model.id.startsWith("gpt-"));
 }
 
 /** User-selectable service tier. Task instructions, tools and reasoning are unchanged. */
@@ -15,22 +15,22 @@ export default function fastMode(pi: ExtensionAPI): void {
   let observed: { tier: string; requestedFast: boolean } | undefined;
 
   pi.registerFlag("fast", {
-    description: "Request Fast processing for GPT-6.1 Sol or GPT-6 Sol in this session",
+    description: "Request priority processing for openai/openai-codex gpt-* models in this session",
     type: "boolean",
     default: false,
   });
 
   function updateStatus(ctx: ExtensionContext): void {
-    const state = supportsFast(ctx.model) ? (enabled ? "ON" : "OFF") : "inactive";
+    const state = canRequestFast(ctx.model) ? (enabled ? "ON" : "OFF") : "inactive";
     const result = observed ? ` · last: ${observed.tier}` : "";
     ctx.ui.setStatus(STATE_TYPE, `Fast: ${state}${result}`);
   }
 
   function describe(ctx: ExtensionContext): string {
     const selection = enabled ? "ON (priority requested)" : "OFF (Standard requested)";
-    const scope = supportsFast(ctx.model)
+    const scope = canRequestFast(ctx.model)
       ? ` for ${ctx.model!.id}`
-      : "; inactive for the current model (supports openai/openai-codex GPT-6.1 Sol and GPT-6 Sol)";
+      : "; inactive for the current model (requests priority for openai/openai-codex gpt-* models)";
     const fallback = observed?.requestedFast && observed.tier === "default" ? " (Standard fallback)" : "";
     const result = observed ? ` Last response: ${observed.tier}${fallback}.` : " Response tier has not been reported yet.";
     return `Fast ${selection}${scope}.${result}`;
@@ -89,11 +89,14 @@ export default function fastMode(pi: ExtensionAPI): void {
 
   pi.on("before_provider_request", (event, ctx) => {
     const payload = event.payload;
-    if (!supportsFast(ctx.model) || !payload || typeof payload !== "object" || Array.isArray(payload)) return;
+    if (!canRequestFast(ctx.model) || !payload || typeof payload !== "object" || Array.isArray(payload)) return;
     const body = payload as Record<string, unknown>;
     // Do not change requests routed to another physical model by an extension.
     if (body.model !== ctx.model!.id) return;
     requestedFast = enabled;
+    // A new request must not inherit a tier from the previous response.
+    observed = undefined;
+    updateStatus(ctx);
     // Explicit default also overrides any API-project default of Fast.
     return { ...body, service_tier: enabled ? "priority" : "default" };
   });
@@ -101,17 +104,34 @@ export default function fastMode(pi: ExtensionAPI): void {
   pi.on("before_provider_headers", (event, ctx) => {
     // Codex's subscription backend also routes by this header (client.rs).
     // Pi invokes this hook before before_provider_request, during auth resolution.
-    if (ctx.model?.provider === "openai-codex" && supportsFast(ctx.model)) {
+    if (ctx.model?.provider === "openai-codex" && canRequestFast(ctx.model)) {
       event.headers["x-codex-routing-hint"] = `model=${ctx.model.id};tier=${enabled ? "priority" : "default"}`;
     }
   });
 
   pi.on("provider_stream_event", (event, ctx) => {
-    if (!supportsFast(ctx.model) || event.provider !== ctx.model!.provider || event.model !== ctx.model!.id) return;
-    const data = event.data as { type?: string; response?: { service_tier?: unknown } } | null;
-    if (!data || (data.type !== "response.completed" && data.type !== "response.done")) return;
-    const tier = data.response?.service_tier;
-    observed = { tier: typeof tier === "string" ? tier : "not reported", requestedFast };
+    if (!canRequestFast(ctx.model) || event.provider !== ctx.model!.provider || event.model !== ctx.model!.id) return;
+    if (!event.data || typeof event.data !== "object" || Array.isArray(event.data)) return;
+    const data = event.data as {
+      type?: unknown;
+      object?: unknown;
+      response?: { service_tier?: unknown } | null;
+      service_tier?: unknown;
+    };
+    let tier: unknown;
+    if (data.type === "response.completed" || data.type === "response.done") {
+      tier = data.response?.service_tier;
+    } else if (event.api === "openai-completions" && data.object === "chat.completion.chunk") {
+      tier = data.service_tier;
+      // Some chunks (including trailing usage chunks) omit the tier; retain one already reported.
+      if ((typeof tier !== "string" || tier.length === 0) && observed) return;
+    } else {
+      return;
+    }
+    const reported = typeof tier === "string" && tier.length > 0 ? tier : "not reported";
+    // Avoid updating the status for every token when chunks repeat the same tier.
+    if (observed?.tier === reported && observed.requestedFast === requestedFast) return;
+    observed = { tier: reported, requestedFast };
     updateStatus(ctx);
   });
 }

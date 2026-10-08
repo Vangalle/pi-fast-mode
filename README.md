@@ -1,6 +1,6 @@
 # pi-fast-mode
 
-Request priority processing for supported OpenAI models in [Pi](https://pi.dev), without changing prompts, tools, or reasoning settings.
+Request priority processing for all `gpt-*` model IDs on Pi's `openai` and `openai-codex` providers, without changing prompts, tools, or reasoning settings. Whether priority is available is decided by the provider, not by this extension.
 
 ## Install
 
@@ -31,11 +31,12 @@ New sessions default to Standard. The selection is saved in the session and foll
 
 ## Scope and limitations
 
-- Supports `gpt-6.1-sol` and `gpt-6-sol` on `openai` and `openai-codex` only. Other models and providers are unchanged.
+- Allows priority requests for any model ID beginning with `gpt-` on `openai` or `openai-codex`, including mini/nano variants, Codex variants, dated snapshots, and future GPT IDs. No per-model allowlist is maintained. This does not make an unavailable model accessible on a provider.
+- Other providers (including OpenRouter and Azure) and non-GPT IDs (including `o*` reasoning models) are unchanged.
 - Sends `service_tier: "priority"` when enabled and `"default"` when disabled. Codex requests also receive the corresponding `x-codex-routing-hint` header.
 - Preserves prompts, tools, reasoning effort, and client identity headers. Requests whose payload names a different model are left unchanged.
-- Shows the service tier reported by the provider. A priority request that returns `default` is reported as a Standard fallback; an omitted tier is shown as `not reported`.
-- **This requests priority; it cannot guarantee Fast access, lower latency, or subscription eligibility.** Earlier testing of the ChatGPT subscription route returned Standard despite a priority request. API priority processing may have additional costs; check your provider's current pricing and eligibility.
+- Reads the reported tier from both Responses terminal events and Chat Completions chunks. A priority request that returns `default` is reported as a Standard fallback; an omitted tier is shown as `not reported`. Later chunks without a tier do not erase a tier already reported by that request. A new eligible request clears the previous observation to avoid showing a stale tier.
+- **This requests priority; it cannot guarantee Fast access, lower latency, or subscription eligibility.** The provider may reject the tier for a model or fall back to Standard. This extension does not retry or resubmit requests automatically. Earlier testing of the ChatGPT subscription route returned Standard despite a priority request. API priority processing may have additional costs; check your provider's current pricing and eligibility.
 - No runtime dependencies or separate network calls. No credentials or conversation content are stored by this extension; only the enabled/disabled selection is appended to the session.
 
 This is the Vangalle GitHub plugin, not the unrelated npm package with the same name. Use the Git install command above.
@@ -48,7 +49,7 @@ npm run check
 pi -ne -e ./src/pi-fast-mode.ts
 ```
 
-Tests run offline without model credentials. They cover request tiers, session defaults and restoration, provider/model boundaries, fallback reporting, routing headers, and real Pi Codex adapter payload construction. GitHub Actions checks Node.js 22 and 24.
+Tests run offline without model credentials. They cover GPT variants, request tiers, session defaults and restoration, provider/model boundaries, fallback reporting, routing headers, and real Pi Responses, Chat Completions, and Codex adapters. Chat Completions streaming is tested through the real SDK using a fake HTTP response, without network I/O. GitHub Actions checks Node.js 22 and 24.
 
 ## License
 
